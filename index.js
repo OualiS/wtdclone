@@ -1,30 +1,29 @@
 import axios from "axios";
 import { Configuration, OpenAIApi } from "openai";
 import githubhook from "githubhook";
-import GitHub from "github-api";
+import { Octokit } from "@octokit/rest";
 
-const gh = new GitHub({
-  token:
-    "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",
+const octokit = new Octokit({
+  auth: "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",
 });
 
 const configuration = new Configuration({
-  apiKey: "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",
+  apiKey: "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",
 });
 const openai = new OpenAIApi(configuration);
 
+const githubOwner = "OualiS";
+const githubRepo = "wtdclone-test-repo";
+
 const handlePullRequest = async (repo, ref, data) => {
-  // this is where we'll post the git commit status message
   console.log(`got webhook on :  ${repo} with action : ${data.action}`);
-
-  console.log(data);
-
-  if (data.action === "opened" || data.action === "synchronize") {
-    // console.log(data.pull_request.diff_url)
-
+  if (
+    (data.action === "opened" || data.action === "synchronize") &&
+    data.pull_request.body &&
+    data.pull_request.body.includes(":summary:")
+  ) {
     const response = await axios.get(data.pull_request.diff_url);
     const diffBody = response.data;
-    console.log("diffBody", diffBody);
 
     const completion = await openai.createChatCompletion({
       model: "gpt-3.5-turbo",
@@ -34,22 +33,33 @@ const handlePullRequest = async (repo, ref, data) => {
           content:
             "You are an expert in the field of computer science and you will make a verbose summary of the following diff from github. You will diplay your summary by file.",
         },
-        { role: "user", content: "" },
         { role: "user", content: diffBody },
       ],
     });
-    // console.log(completion.data.choices[0].message.content);
 
-    const repo = gh.getRepo("OualiS", "wtdclone-test-repo");
-    const pull = repo.getPullRequest(data.pull_request.id);
-    console.log(pull);
-    // pull.listComments(function(err, comments) {
-    //   if (err) throw err;
-    //   // Code de modification du commentaire
-    //   pull.updateComment(comments[0].id, completion.data.choices[0].message.content, function(err, comment) {
-    //     if (err) throw err;
-    //   });
-    // });
+    try {
+      // Récupérez les détails de la pull request
+      const { data: pr } = await octokit.pulls.get({
+        owner: githubOwner,
+        repo: githubRepo,
+        pull_number: data.number,
+      });
+
+      // Mettez à jour le corps de la pull request
+      await octokit.pulls.update({
+        owner: githubOwner,
+        repo: githubRepo,
+        pull_number: data.number,
+        body: completion.data.choices[0].message.content,
+      });
+
+      console.log("Le corps de la pull request a été mis à jour");
+    } catch (error) {
+      console.error(
+        "Erreur lors de la mise à jour du corps de la pull request :",
+        error
+      );
+    }
   }
 };
 
